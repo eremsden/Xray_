@@ -1,6 +1,6 @@
 #!/bin/bash
 apt update
-apt install qrencode curl jq -y
+apt install curl jq -y
 
 # Включаем bbr
 bbr=$(sysctl -a | grep net.ipv4.tcp_congestion_control)
@@ -26,7 +26,6 @@ export privatkey=$(cat /usr/local/etc/xray/.keys | awk -F': ' '/PrivateKey/ {pri
 export shortsid=$(cat /usr/local/etc/xray/.keys | awk -F': ' '/shortsid/ {print $2}')
 
 # Создаем файл конфигурации Xray
-touch /usr/local/etc/xray/config.json
 cat << EOF > /usr/local/etc/xray/config.json
 {
     "log": {
@@ -110,7 +109,6 @@ cat << EOF > /usr/local/etc/xray/config.json
 EOF
 
 # Исполняемый файл для списка клиентов
-touch /usr/local/bin/userlist
 cat << 'EOF' > /usr/local/bin/userlist
 #!/bin/bash
 emails=($(jq -r '.inbounds[0].settings.clients[].email' "/usr/local/etc/xray/config.json"))
@@ -128,7 +126,6 @@ EOF
 chmod +x /usr/local/bin/userlist
 
 # исполняемый файл для ссылки основного пользователя
-touch /usr/local/bin/mainuser
 cat << 'EOF' > /usr/local/bin/mainuser
 #!/bin/bash
 protocol=$(jq -r '.inbounds[0].protocol' /usr/local/etc/xray/config.json)
@@ -140,24 +137,21 @@ sni=$(jq -r '.inbounds[0].streamSettings.realitySettings.serverNames[0]' /usr/lo
 ip=$(timeout 3 curl -4 -s icanhazip.com)
 link="$protocol://$uuid@$ip:$port?security=reality&sni=$sni&fp=firefox&pbk=$pbk&sid=$sid&spx=/&type=tcp&flow=xtls-rprx-vision&encryption=none#vless-$ip"
 echo ""
-
 echo "$link"
 echo ""
-
-echo ${link} | qrencode -t ansiutf8
 EOF
 chmod +x /usr/local/bin/mainuser
 
 # Исполняемый файл для создания новых клиентов
-touch /usr/local/bin/newuser
 cat << 'EOF' > /usr/local/bin/newuser
 #!/bin/bash
 read -p "Введите имя пользователя (email): " email
 
-    if [[ -z "$email" || "$email" == *" "* ]]; then
+if [[ -z "$email" || "$email" == *" "* ]]; then
     echo "Имя пользователя не может быть пустым или содержать пробелы. Попробуйте снова."
     exit 1
-    fi
+fi
+
 user_json=$(jq --arg email "$email" '.inbounds[0].settings.clients[] | select(.email == $email)' /usr/local/etc/xray/config.json)
 
 if [[ -z "$user_json" ]]; then
@@ -175,11 +169,9 @@ sni=$(jq -r '.inbounds[0].streamSettings.realitySettings.serverNames[0]' /usr/lo
 ip=$(curl -4 -s icanhazip.com)
 link="$protocol://$uuid@$ip:$port?security=reality&sni=$sni&fp=firefox&pbk=$pbk&sid=$sid&spx=/&type=tcp&flow=xtls-rprx-vision&encryption=none#$username"
 echo ""
-echo "Ссылка для подключения":
+echo "Ссылка для подключения:"
 echo "$link"
 echo ""
-echo "QR-код:"
-echo ${link} | qrencode -t ansiutf8
 else
 echo "Пользователь с таким именем уже существует. Попробуйте снова." 
 fi
@@ -187,7 +179,6 @@ EOF
 chmod +x /usr/local/bin/newuser
 
 # Исполняемый файл для удаления клиентов
-touch /usr/local/bin/rmuser
 cat << 'EOF' > /usr/local/bin/rmuser
 #!/bin/bash
 emails=($(jq -r '.inbounds[0].settings.clients[].email' "/usr/local/etc/xray/config.json"))
@@ -222,7 +213,6 @@ EOF
 chmod +x /usr/local/bin/rmuser
 
 # Исполняемый файл для вывода списка пользователей и создания ссылкок
-touch /usr/local/bin/sharelink
 cat << 'EOF' > /usr/local/bin/sharelink
 #!/bin/bash
 emails=($(jq -r '.inbounds[0].settings.clients[].email' /usr/local/etc/xray/config.json))
@@ -240,7 +230,6 @@ fi
 
 selected_email="${emails[$((client - 1))]}"
 
-
 index=$(jq --arg email "$selected_email" '.inbounds[0].settings.clients | to_entries[] | select(.value.email == $email) | .key'  /usr/local/etc/xray/config.json)
 protocol=$(jq -r '.inbounds[0].protocol' /usr/local/etc/xray/config.json)
 port=$(jq -r '.inbounds[0].port' /usr/local/etc/xray/config.json) 
@@ -252,11 +241,9 @@ sni=$(jq -r '.inbounds[0].streamSettings.realitySettings.serverNames[0]' /usr/lo
 ip=$(curl -4 -s icanhazip.com)
 link="$protocol://$uuid@$ip:$port?security=reality&sni=$sni&fp=firefox&pbk=$pbk&sid=$sid&spx=/&type=tcp&flow=xtls-rprx-vision&encryption=none#$username"
 echo ""
-echo "Ссылка для подключения":
+echo "Ссылка для подключения:"
 echo "$link"
 echo ""
-echo "QR-код:"
-echo ${link} | qrencode -t ansiutf8
 EOF
 chmod +x /usr/local/bin/sharelink
 
@@ -266,7 +253,6 @@ echo "Xray-core успешно установлен"
 mainuser
 
 # Создаем файл с подсказками
-touch $HOME/help
 cat << 'EOF' > $HOME/help
 
 Команды для управления пользователями Xray:
@@ -276,8 +262,6 @@ cat << 'EOF' > $HOME/help
     rmuser - удаление пользователей
     sharelink - выводит список пользователей и позволяет создать для них ссылки для подключения
     userlist - выводит список клиентов
-
-
 
 Файл конфигурации находится по адресу:
 
