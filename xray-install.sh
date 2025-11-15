@@ -140,10 +140,10 @@ sni=$(jq -r '.inbounds[0].streamSettings.realitySettings.serverNames[0]' /usr/lo
 ip=$(timeout 3 curl -4 -s icanhazip.com)
 link="$protocol://$uuid@$ip:$port?security=reality&sni=$sni&fp=firefox&pbk=$pbk&sid=$sid&spx=/&type=tcp&flow=xtls-rprx-vision&encryption=none#vless-$ip"
 echo ""
-echo "Ссылка для подключения":
+
 echo "$link"
 echo ""
-echo "QR-код:"
+
 echo ${link} | qrencode -t ansiutf8
 EOF
 chmod +x /usr/local/bin/mainuser
