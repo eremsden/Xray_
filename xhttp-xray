@@ -2,7 +2,7 @@
 echo "Будет установлен Vless с транспортом XHTTP"
 sleep 3
 apt update
-apt install qrencode curl jq -y
+apt install curl jq -y
 
 # Включаем bbr
 bbr=$(sysctl -a | grep net.ipv4.tcp_congestion_control)
@@ -15,8 +15,10 @@ sysctl -p
 echo "bbr включен"
 fi
 
-# Устанавливаем ядро Xray
+# Устанавливаем ядро Xray с явным указанием источника
+echo "Устанавливаем Xray-core из официального репозитория: https://github.com/XTLS/Xray-install"
 bash -c "$(curl -4 -L https://github.com/XTLS/Xray-install/raw/main/install-release.sh)" @ install
+
 [ -f /usr/local/etc/xray/.keys ] && rm /usr/local/etc/xray/.keys
 touch /usr/local/etc/xray/.keys
 echo "shortsid: $(openssl rand -hex 8)" >> /usr/local/etc/xray/.keys
@@ -28,7 +30,6 @@ export privatkey=$(cat /usr/local/etc/xray/.keys | awk -F': ' '/PrivateKey/ {pri
 export shortsid=$(cat /usr/local/etc/xray/.keys | awk -F': ' '/shortsid/ {print $2}')
 
 # Создаем файл конфигурации Xray
-touch /usr/local/etc/xray/config.json
 cat << EOF > /usr/local/etc/xray/config.json
 {
     "log": {
@@ -122,7 +123,6 @@ cat << EOF > /usr/local/etc/xray/config.json
 EOF
 
 # Исполняемый файл для списка клиентов
-touch /usr/local/bin/userlist
 cat << 'EOF' > /usr/local/bin/userlist
 #!/bin/bash
 emails=($(jq -r '.inbounds[0].settings.clients[].email' "/usr/local/etc/xray/config.json"))
@@ -139,8 +139,7 @@ done
 EOF
 chmod +x /usr/local/bin/userlist
 
-# исполняемый файл для ссылки основного пользователя
-touch /usr/local/bin/mainuser
+# исполняемый файл для ссылки основного пользователя (БЕЗ QR-кода)
 cat << 'EOF' > /usr/local/bin/mainuser
 #!/bin/bash
 protocol=$(jq -r '.inbounds[0].protocol' /usr/local/etc/xray/config.json)
@@ -152,54 +151,49 @@ sni=$(jq -r '.inbounds[0].streamSettings.realitySettings.serverNames[0]' /usr/lo
 ip=$(timeout 3 curl -4 -s icanhazip.com)
 link="$protocol://$uuid@$ip:$port?security=reality&path=%2F&host=&mode=auto&sni=$sni&fp=firefox&pbk=$pbk&sid=$sid&spx=%2F&type=xhttp&encryption=none#vless-$ip"
 echo ""
-echo "Ссылка для подключения":
+echo "Ссылка для подключения:"
 echo "$link"
 echo ""
-echo "QR-код:"
-echo ${link} | qrencode -t ansiutf8
 EOF
 chmod +x /usr/local/bin/mainuser
 
-# Исполняемый файл для создания новых клиентов
-touch /usr/local/bin/newuser
+# Исполняемый файл для создания новых клиентов (БЕЗ QR-кода)
 cat << 'EOF' > /usr/local/bin/newuser
 #!/bin/bash
 read -p "Введите имя пользователя (email): " email
 
-    if [[ -z "$email" || "$email" == *" "* ]]; then
+if [[ -z "$email" || "$email" == *" "* ]]; then
     echo "Имя пользователя не может быть пустым или содержать пробелы. Попробуйте снова."
     exit 1
-    fi
+fi
+
 user_json=$(jq --arg email "$email" '.inbounds[0].settings.clients[] | select(.email == $email)' /usr/local/etc/xray/config.json)
 
 if [[ -z "$user_json" ]]; then
-uuid=$(xray uuid)
-jq --arg email "$email" --arg uuid "$uuid" '.inbounds[0].settings.clients += [{"email": $email, "id": $uuid, "flow": ""}]' /usr/local/etc/xray/config.json > tmp.json && mv tmp.json /usr/local/etc/xray/config.json
-systemctl restart xray
-index=$(jq --arg email "$email" '.inbounds[0].settings.clients | to_entries[] | select(.value.email == $email) | .key'  /usr/local/etc/xray/config.json)
-protocol=$(jq -r '.inbounds[0].protocol' /usr/local/etc/xray/config.json)
-port=$(jq -r '.inbounds[0].port' /usr/local/etc/xray/config.json)
-uuid=$(jq --argjson index "$index" -r '.inbounds[0].settings.clients[$index].id' /usr/local/etc/xray/config.json)
-pbk=$(cat /usr/local/etc/xray/.keys | awk -F': ' '/Password/ {print $2}')
-sid=$(cat /usr/local/etc/xray/.keys | awk -F': ' '/shortsid/ {print $2}')
-username=$(jq --argjson index "$index" -r '.inbounds[0].settings.clients[$index].email' /usr/local/etc/xray/config.json)
-sni=$(jq -r '.inbounds[0].streamSettings.realitySettings.serverNames[0]' /usr/local/etc/xray/config.json)
-ip=$(curl -4 -s icanhazip.com)
-link="$protocol://$uuid@$ip:$port?security=reality&path=%2F&host=&mode=auto&sni=$sni&fp=firefox&pbk=$pbk&sid=$sid&spx=%2F&type=xhttp&encryption=none#$username"
-echo ""
-echo "Ссылка для подключения":
-echo "$link"
-echo ""
-echo "QR-код:"
-echo ${link} | qrencode -t ansiutf8
+    uuid=$(xray uuid)
+    jq --arg email "$email" --arg uuid "$uuid" '.inbounds[0].settings.clients += [{"email": $email, "id": $uuid, "flow": ""}]' /usr/local/etc/xray/config.json > tmp.json && mv tmp.json /usr/local/etc/xray/config.json
+    systemctl restart xray
+    index=$(jq --arg email "$email" '.inbounds[0].settings.clients | to_entries[] | select(.value.email == $email) | .key'  /usr/local/etc/xray/config.json)
+    protocol=$(jq -r '.inbounds[0].protocol' /usr/local/etc/xray/config.json)
+    port=$(jq -r '.inbounds[0].port' /usr/local/etc/xray/config.json)
+    uuid=$(jq --argjson index "$index" -r '.inbounds[0].settings.clients[$index].id' /usr/local/etc/xray/config.json)
+    pbk=$(cat /usr/local/etc/xray/.keys | awk -F': ' '/Password/ {print $2}')
+    sid=$(cat /usr/local/etc/xray/.keys | awk -F': ' '/shortsid/ {print $2}')
+    username=$(jq --argjson index "$index" -r '.inbounds[0].settings.clients[$index].email' /usr/local/etc/xray/config.json)
+    sni=$(jq -r '.inbounds[0].streamSettings.realitySettings.serverNames[0]' /usr/local/etc/xray/config.json)
+    ip=$(curl -4 -s icanhazip.com)
+    link="$protocol://$uuid@$ip:$port?security=reality&path=%2F&host=&mode=auto&sni=$sni&fp=firefox&pbk=$pbk&sid=$sid&spx=%2F&type=xhttp&encryption=none#$username"
+    echo ""
+    echo "Ссылка для подключения:"
+    echo "$link"
+    echo ""
 else
-echo "Пользователь с таким именем уже существует. Попробуйте снова." 
+    echo "Пользователь с таким именем уже существует. Попробуйте снова." 
 fi
 EOF
 chmod +x /usr/local/bin/newuser
 
 # Исполняемый файл для удаления клиентов
-touch /usr/local/bin/rmuser
 cat << 'EOF' > /usr/local/bin/rmuser
 #!/bin/bash
 emails=($(jq -r '.inbounds[0].settings.clients[].email' "/usr/local/etc/xray/config.json"))
@@ -233,8 +227,7 @@ echo "Клиент $selected_email удалён."
 EOF
 chmod +x /usr/local/bin/rmuser
 
-# Исполняемый файл для вывода списка пользователей и создания ссылкок
-touch /usr/local/bin/sharelink
+# Исполняемый файл для вывода списка пользователей (БЕЗ QR-кода)
 cat << 'EOF' > /usr/local/bin/sharelink
 #!/bin/bash
 emails=($(jq -r '.inbounds[0].settings.clients[].email' /usr/local/etc/xray/config.json))
@@ -252,7 +245,6 @@ fi
 
 selected_email="${emails[$((client - 1))]}"
 
-
 index=$(jq --arg email "$selected_email" '.inbounds[0].settings.clients | to_entries[] | select(.value.email == $email) | .key'  /usr/local/etc/xray/config.json)
 protocol=$(jq -r '.inbounds[0].protocol' /usr/local/etc/xray/config.json)
 port=$(jq -r '.inbounds[0].port' /usr/local/etc/xray/config.json) 
@@ -264,23 +256,20 @@ sni=$(jq -r '.inbounds[0].streamSettings.realitySettings.serverNames[0]' /usr/lo
 ip=$(curl -4 -s icanhazip.com)
 link="$protocol://$uuid@$ip:$port?security=reality&path=%2F&host=&mode=auto&sni=$sni&fp=firefox&pbk=$pbk&sid=$sid&spx=%2F&type=xhttp&encryption=none#$username"
 echo ""
-echo "Ссылка для подключения":
+echo "Ссылка для подключения:"
 echo "$link"
 echo ""
-echo "QR-код:"
-echo ${link} | qrencode -t ansiutf8
 EOF
 chmod +x /usr/local/bin/sharelink
 
 systemctl restart xray
 
 echo "Xray-core успешно установлен"
+echo "Источник установки: https://github.com/XTLS/Xray-install"
 mainuser
 
 # Создаем файл с подсказками
-touch $HOME/help
 cat << 'EOF' > $HOME/help
-
 Команды для управления пользователями Xray:
 
     mainuser - выводит ссылку для подключения основного пользователя
@@ -289,14 +278,12 @@ cat << 'EOF' > $HOME/help
     sharelink - выводит список пользователей и позволяет создать для них ссылки для подключения
     userlist - выводит список клиентов
 
-
-
 Файл конфигурации находится по адресу:
-
     /usr/local/etc/xray/config.json
 
 Команда для перезагрузки ядра Xray:
-
     systemctl restart xray
 
+Источник установки Xray:
+    https://github.com/XTLS/Xray-install
 EOF
